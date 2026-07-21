@@ -1,0 +1,245 @@
+@{
+    Layout = null;
+}
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Quản lý nhân viên · Thiết bị chấm công Hikvision</title>
+<link rel="stylesheet" href="~/css/employee.css?v=@DateTime.Now.ToString("yyyyMMddHHmmss")" />
+</head>
+<body>
+
+<div class="app-shell">
+
+  <!-- Header -->
+  <header class="app-header">
+    <div class="app-brand">
+      <div class="app-brand__mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round">
+          <path d="M12 2a5 5 0 0 0-5 5v2a5 5 0 0 0 10 0V7a5 5 0 0 0-5-5Z"/>
+          <path d="M6 12v1a6 6 0 0 0 12 0v-1M4 20c1.5-2 4-3 8-3s6.5 1 8 3"/>
+        </svg>
+      </div>
+      <div class="app-brand__text">
+        <h1>Quản lý nhân viên</h1>
+        <p>Hệ thống quản lý đồng bộ trực tiếp với thiết bị HikVision (vân tay · khuôn mặt · thẻ)</p>
+      </div>
+    </div>
+    <div class="app-header__stats" id="headerStats">
+      <div class="stat-pill">
+        <span class="stat-pill__value" id="statTotal">-</span>
+        <span class="stat-pill__label">Kết quả phù hợp</span>
+      </div>
+      <div class="stat-pill">
+        <span class="stat-pill__value" id="statPage">1</span>
+        <span class="stat-pill__label">Trang hiện tại</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <div class="search-box">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <input type="text" id="searchInput" placeholder="Tìm theo mã nhân viên hoặc tên..." />
+    </div>
+
+    <button class="btn btn-ghost" id="btnRefresh" title="Tải lại danh sách">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
+      Làm mới
+    </button>
+
+    <button class="btn btn-primary" id="btnAddEmployee">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      Thêm nhân viên
+    </button>
+  </div>
+
+  <!-- Employee list -->
+  <div class="employee-list" id="employeeList"></div>
+
+  <!-- Empty state -->
+  <div class="empty-state" id="emptyState" style="display:none">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+    <h3>Không tìm thấy nhân viên</h3>
+    <p>Thử từ khóa khác, hoặc kiểm tra kết nối tới thiết bị.</p>
+  </div>
+
+  <!-- Pagination -->
+  <div class="pagination" id="pagination"></div>
+
+</div>
+
+<!-- ================= Modal: Add / Edit Employee ================= -->
+<div class="overlay" id="employeeModalOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="employeeModalTitle">Thêm nhân viên</h2>
+      <button class="modal-close" data-close="employeeModalOverlay">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <form id="employeeForm">
+        <div class="form-field full">
+          <label>Ảnh khuôn mặt</label>
+          <div class="avatar-upload">
+            <img id="f_avatarPreview" class="preview" src="https://api.dicebear.com/7.x/initials/svg?seed=NV" alt="preview" />
+            <div>
+              <input type="file" id="f_faceFile" accept="image/*" />
+              <p class="form-hint">Chọn ảnh sẽ upload lên thiết bị khi bấm Lưu (đăng ký khuôn mặt qua UploadFace).</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-grid" style="margin-top:14px">
+          <div class="form-field">
+            <label>Mã nhân viên *</label>
+            <input type="text" id="f_employeeNo" placeholder="VD: 1001" />
+            <span class="field-error" id="err_employeeNo"></span>
+          </div>
+          <div class="form-field">
+            <label>Tên nhân viên *</label>
+            <input type="text" id="f_name" placeholder="VD: Nguyễn Văn An" />
+            <span class="field-error" id="err_name"></span>
+          </div>
+
+          <div class="form-field">
+            <label>Giới tính</label>
+            <select id="f_gender">
+              <option value="male">Nam</option>
+              <option value="female">Nữ</option>
+              <option value="unknown">Khác</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label>Loại nhân viên</label>
+            <select id="f_userType">
+              <option value="normal">Normal</option>
+              <option value="visitor">Visitor</option>
+              <option value="blackList">Blacklist</option>
+            </select>
+          </div>
+
+          <div class="form-field">
+            <label>Hiệu lực từ</label>
+            <input type="date" id="f_validFrom" />
+          </div>
+          <div class="form-field">
+            <label>Hiệu lực đến</label>
+            <input type="date" id="f_validTo" />
+          </div>
+
+          <div class="form-field full">
+            <label>Trạng thái tài khoản (Enabled)</label>
+            <select id="f_enabled">
+              <option value="true">Bình thường (userType = normal)</option>
+              <option value="false">Vô hiệu hóa (userType = blackList)</option>
+            </select>
+            <span class="form-hint">Cờ này quyết định userType gửi lên thiết bị — cũng là cờ dùng cho nút bật/tắt active ở danh sách.</span>
+          </div>
+
+          <div class="form-field full">
+            <label class="checkbox-row">
+              <input type="checkbox" id="f_localUIRight" />
+              Cho phép thao tác trực tiếp trên màn hình thiết bị (LocalUI Right)
+            </label>
+          </div>
+        </div>
+
+        <div class="form-field full biometric-section" id="biometricSection" style="display:none">
+          <label>Sinh trắc học hiện có</label>
+
+          <div class="biometric-row">
+            <span class="biometric-row-label">Khuôn mặt (<span id="bio_faceCount">0</span>)</span>
+            <button type="button" class="btn btn-ghost" id="btnDeleteFace" style="background: var(--danger); color: var(--surface);">Xóa khuôn mặt hiện có</button>
+          </div>
+
+          <div class="biometric-row" style="margin-bottom:2px">
+            <span class="biometric-row-label">Vân tay (đang có <span id="bio_fingerCount">0</span>) — chọn đúng ngón để chụp hoặc xóa</span>
+          </div>
+
+          <div class="fingerprint-slots" id="fingerprintSlots"><!-- render boi JS: 10 hang, moi hang 1 ngon --></div>
+
+          <span class="form-hint" id="fingerprintHint">Đặt tay lên đầu đọc vân tay trên thiết bị rồi bấm "Chụp" ở đúng ngón muốn đăng ký.</span>
+        </div>
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" data-close="employeeModalOverlay">Hủy</button>
+      <button class="btn btn-primary" id="btnSaveEmployee">Lưu nhân viên</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= Modal: Attendance history ================= -->
+<div class="overlay" id="attendanceModalOverlay">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <h2>Lịch sử checkin / checkout</h2>
+      <button class="modal-close" data-close="attendanceModalOverlay">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="attendance-emp" id="attendanceEmpInfo"></div>
+
+      <div class="attendance-filters">
+        <div class="form-field">
+          <label>Từ ngày</label>
+          <input type="date" id="att_fromDate" />
+        </div>
+        <div class="form-field">
+          <label>Đến ngày</label>
+          <input type="date" id="att_toDate" />
+        </div>
+        <button class="btn btn-ghost" id="btnFilterAttendance">Lọc</button>
+      </div>
+
+      <table class="attendance-table">
+        <thead>
+          <tr>
+            <th>Thời gian</th>
+            <th>Loại người dùng</th>
+            <th>Phương thức xác thực</th>
+            <th>Ảnh chụp</th>
+          </tr>
+        </thead>
+        <tbody id="attendanceTableBody"></tbody>
+      </table>
+      <div class="empty-state" id="attendanceEmpty" style="display:none; padding:32px 0">
+        <p>Không có sự kiện ra/vào trong khoảng thời gian này.</p>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" data-close="attendanceModalOverlay">Đóng</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= Modal: Confirm delete ================= -->
+<div class="overlay" id="confirmModalOverlay">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-body" style="padding-top:24px">
+      <div class="confirm-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/></svg>
+      </div>
+      <h2 style="font-size:16px; margin:0 0 8px">Xóa nhân viên?</h2>
+      <p style="font-size:13.5px; color:var(--ink-soft); margin:0" id="confirmDeleteText">
+        Toàn bộ dữ liệu vân tay, khuôn mặt và thẻ của nhân viên này sẽ bị xóa khỏi thiết bị.
+      </p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" data-close="confirmModalOverlay">Hủy</button>
+      <button class="btn" style="background:var(--danger); color:#fff" id="btnConfirmDelete">Xóa nhân viên</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-stack" id="toastStack"></div>
+
+<script src="~/js/employee.js?v=@DateTime.Now.ToString("yyyyMMddHHmmss")"></script>
+</body>
+</html>
