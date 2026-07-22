@@ -977,18 +977,17 @@ public class HikvisionClient
 
         var requestObj = new
         {
-            searchResultPosition = 0,
-            maxResults = 1,
             faceLibType = "blackFD",
             FDID = "1",
-            FPID = new[] { employeeNo }
+            FPID =  employeeNo,
+            deleteFP = true
         };
 
         string json = JsonSerializer.Serialize(requestObj);
 
         using var response = await SendWithSessionRetryAsync(() =>
         {
-            var req = CreateRequest(HttpMethod.Put, "/ISAPI/Intelligent/FDLib/FDSearch/Delete?format=json");
+            var req = CreateRequest(HttpMethod.Put, "/ISAPI/Intelligent/FDLib/FDSetUp?format=json");
             req.Headers.TryAddWithoutValidation("Accept", "application/json, text/plain, */*");
             req.Content = new StringContent(json, Encoding.UTF8, "application/json");
             return req;
