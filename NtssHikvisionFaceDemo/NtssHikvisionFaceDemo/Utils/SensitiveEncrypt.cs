@@ -173,8 +173,17 @@ public class InfoEncryption
         
         byte[] szSrcByteArray = AESEncryption.convertCharArrayToByteArray(szSrcBytes, szSrcBytes.Length);
         string strAesData = AESEncryption.AesDecrypt(szSrcByteArray, szAESKey, szInitVextorByteArray);
+        strAesData = FixBase64(strAesData);
         byte[] szOut = Convert.FromBase64String(strAesData);
         strOut = Encoding.UTF8.GetString(szOut);
+    }
+    private static string FixBase64(string input)
+    {
+        int mod = input.Length % 4;
+        if (mod > 0)
+            input += new string('=', 4 - mod);
+
+        return input;
     }
 }
 

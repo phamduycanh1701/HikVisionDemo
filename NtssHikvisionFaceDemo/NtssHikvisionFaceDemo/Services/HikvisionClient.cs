@@ -46,9 +46,23 @@ public class HikvisionClient
         _client = new HttpClient(handler);
 
         _client.Timeout = TimeSpan.FromSeconds(30);
+        
+        string host = _options.DefaultHost;
+        int port = _options.DefaultPort;
+        string ipWan = "";
+        var addressIP = Dns.GetHostAddressesAsync(_options.DnsDomain)?.Result;
+        if (addressIP is { Length: > 0 })
+        {
+            ipWan = addressIP[0].ToString();
+            if (!string.IsNullOrWhiteSpace(ipWan))
+            {
+                host = ipWan;
+                port = _options.Port;
+            }
+        }
 
         _client.BaseAddress =
-            new Uri($"http://{_options.Host}:{_options.Port}");
+            new Uri($"http://{host}:{port}");
     }
 
     private async Task EnsureLoginAsync()
@@ -82,8 +96,6 @@ public class HikvisionClient
 
         var cap = XmlHelper.Deserialize<SessionLoginCap>(capXml);
 
-        _salt = cap.Salt;
-
         var password = LoginEncryptHelper.EncodePassword(
             _options.Username,
             _options.Password,
@@ -103,16 +115,38 @@ public class HikvisionClient
 
         response.EnsureSuccessStatusCode();
 
-        var loginXml = await response.Content.ReadAsStringAsync();
-
         var login =
-            XmlHelper.Deserialize<SessionLoginResponse>(loginXml);
+            XmlHelper.Deserialize<SessionLoginResponse>(body);
 
         if (login.StatusValue != 200)
             throw new Exception(login.StatusString);
-
-
+        
         _sessionTag = login.SessionTag;
+        
+        var req = CreateRequest(HttpMethod.Get,
+            $"/ISAPI/Security/capabilities?username={_options.Username}");
+
+        try
+        {
+            var response2 = await SendWithSessionLoginAsync(() =>
+            {
+                var req = CreateRequest(HttpMethod.Get, $"/ISAPI/Security/capabilities?username={_options.Username}");
+                return req;
+            });
+
+            var body2 = await response2.Content.ReadAsStringAsync();
+
+            response2.EnsureSuccessStatusCode();
+
+            var login2 =
+                XmlHelper.Deserialize<SecurityCap>(body2);
+            
+            _salt = login2.Salt;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex);
+        }
     }
 
     private HttpRequestMessage CreateRequest(
@@ -127,6 +161,15 @@ public class HikvisionClient
         }
 
         return request;
+    }
+    
+    private async Task<HttpResponseMessage> SendWithSessionLoginAsync(
+        Func<HttpRequestMessage> buildRequest,
+        HttpCompletionOption completionOption = HttpCompletionOption.ResponseContentRead,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _client.SendAsync(buildRequest(), completionOption, cancellationToken);
+        return response;
     }
 
     /// <summary>
@@ -160,7 +203,7 @@ public class HikvisionClient
 
     private string EncryptFieldData(string value, string iv)
     {
-        InfoEncryption.getEncryptKey(_options.Username, _salt, _options.Password, out var szOut, 100, true);
+        InfoEncryption.getEncryptKey(_options.Username,  _salt, _options.Password, out var szOut, 100, true);
         InfoEncryption.getEncryptContent(iv, szOut, value, out string valueEncrypt, 1);
         return valueEncrypt;
     }
@@ -392,8 +435,6 @@ public class HikvisionClient
 
         string searchId = Guid.NewGuid().ToString("N");
 
-        var a = EncryptFieldData("MzAxGCxZFUikh0ghFUjMhlKpJii8FE61FGi0fFlVFji8iF6FFRioDmoFFUisfEM1Fkiki4blJjicFKCVJiiwi52xJVichbKNFli0FKrJFDiYBr6lFUicgcX9FDiUfPmdJjjEl8whJTiQBuUFFZiMd2pxJCioBXJdFDisfSX9JDiwEE8dFIio7mEpJFi4dQvyJOi4bgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYRMAMCJEEakKhfEOEQTTDYFOZRRFgAwG7w4SMRQGfAoeIYGqDnzSLAESdBAGkWcUE40FDsEMFBXkCYurH0aDugsUb1MCMdwSBTlBIHIhE31REwQQAASIZxZAwscRd8FyEBFUAYYuUgIx2QN8YE0EM94Hi3oABHE3AhTvHUAxuwCHKnXGe+APlwAAAAAAe2I=", "2563c847ab7384b1e00f0da40b9c8b4c");
-
         var requestObj = new
         {
             UserInfoSearchCond = new
@@ -450,50 +491,60 @@ public class HikvisionClient
                     : DateTime.MinValue;
             }
 
-            result.Items.Add(new PersonInfo
+            try
             {
-                EmployeeNo = DecryptFieldData(
-                    item.GetProperty("employeeNo").GetString() ?? "",
-                    iv),
+                result.Items.Add(new PersonInfo
+                {
+                    EmployeeNo = DecryptFieldData(
+                        item.GetProperty("employeeNo").GetString() ?? "",
+                        iv),
 
-                Name = DecryptFieldData(
-                    item.GetProperty("name").GetString() ?? "",
-                    iv),
+                    Name = DecryptFieldData(
+                        item.GetProperty("name").GetString() ?? "",
+                        iv),
 
-                Gender = item.TryGetProperty("gender", out var gender)
-                    ? gender.GetString() ?? ""
-                    : "",
+                    Gender = item.TryGetProperty("gender", out var gender)
+                        ? gender.GetString() ?? ""
+                        : "",
 
-                UserType = item.TryGetProperty("userType", out var userType)
-                    ? userType.GetString() ?? ""
-                    : "",
+                    UserType = item.TryGetProperty("userType", out var userType)
+                        ? userType.GetString() ?? ""
+                        : "",
 
-                // userType "blackList" nghia la nhan vien dang bi vo hieu hoa (theo quy uoc
-                // UpdateUserAsync dang dung: Enabled=false => luu userType="blackList").
-                Enabled = (userType.ValueKind != JsonValueKind.Undefined ? userType.GetString() : "normal") != "blackList",
+                    // userType "blackList" nghia la nhan vien dang bi vo hieu hoa (theo quy uoc
+                    // UpdateUserAsync dang dung: Enabled=false => luu userType="blackList").
+                    Enabled = (userType.ValueKind != JsonValueKind.Undefined ? userType.GetString() : "normal") != "blackList",
 
-                FaceUrl = item.TryGetProperty("faceURL", out var faceUrl)
-                    ? faceUrl.GetString() + "?token=" + await GetFDTokenAsync() ?? ""
-                    : "",
+                    FaceUrl = item.TryGetProperty("faceURL", out var faceUrl)
+                        ? faceUrl.GetString() + "?token=" + await GetFDTokenAsync() ?? ""
+                        : "",
 
-                NumOfCard = item.TryGetProperty("numOfCard", out var numOfCard)
-                    ? numOfCard.GetInt32()
-                    : 0,
+                    NumOfCard = item.TryGetProperty("numOfCard", out var numOfCard)
+                        ? numOfCard.GetInt32()
+                        : 0,
 
-                NumOfFace = item.TryGetProperty("numOfFace", out var numOfFace)
-                    ? numOfFace.GetInt32()
-                    : 0,
+                    NumOfFace = item.TryGetProperty("numOfFace", out var numOfFace)
+                        ? numOfFace.GetInt32()
+                        : 0,
 
-                NumOfFingerprint = item.TryGetProperty("numOfFP", out var numOfFp)
-                    ? numOfFp.GetInt32()
-                    : 0,
+                    NumOfFingerprint = item.TryGetProperty("numOfFP", out var numOfFp)
+                        ? numOfFp.GetInt32()
+                        : 0,
 
-                LocalUIRight = item.TryGetProperty("localUIRight", out var localUIRight)
-                               && localUIRight.GetBoolean(),
+                    LocalUIRight = item.TryGetProperty("localUIRight", out var localUIRight)
+                                   && localUIRight.GetBoolean(),
 
-                ValidFrom = beginTime,
-                ValidTo = endTime
-            });
+                    ValidFrom = beginTime,
+                    ValidTo = endTime
+                });
+            }
+            catch( Exception ex)
+            {
+                Console.WriteLine(ex);
+                throw;
+            }
+
+            
         }
 
         if (result.Total == 0)
